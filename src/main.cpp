@@ -272,6 +272,12 @@ std::vector<kb_command_t> kb_commands = {
          {ACT_SEP, "echo \"\"\n"},
          {ACT_RLSALL, ""},
      }},
+    {"Shut Down PC",
+     {
+         // shut down
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "shutdown /s /t 0\n"},
+     }},
     {"BSOD",
      {
          // bsod
@@ -287,6 +293,30 @@ std::vector<kb_command_t> kb_commands = {
          {ACT_DELAY, ""},
          {ACT_SEP, "wininit\n"},
          {ACT_RLSALL, ""},
+     }},
+    {"Test1",
+     {
+         {ACT_SEP, "Test1"},
+     }},
+    {"Test2",
+     {
+         {ACT_SEP, "Test2"},
+     }},
+    {"Test3",
+     {
+         {ACT_SEP, "Test3"},
+     }},
+    {"Test4",
+     {
+         {ACT_SEP, "Test4"},
+     }},
+    {"Test5",
+     {
+         {ACT_SEP, "Test5"},
+     }},
+    {"Test6",
+     {
+         {ACT_SEP, "Test6"},
      }},
 };
 
@@ -406,8 +436,8 @@ void encoder_task(void* param)
             clk_tmr = tmr_now;
         }
 
-        static bool prev_btnstate = true;
-        bool btn_state = !!(GPIO.in & (1UL << ENCODER_BTN));
+        static bool prev_btnstate = false;
+        bool btn_state = !(GPIO.in & (1UL << ENCODER_BTN));
 
         if (btn_state != prev_btnstate)
         {
@@ -598,13 +628,15 @@ void do_command(std::vector<kb_action_t>& vec)
     }
 }
 
-static void print_line_to_tft(TFT_eSprite& tftsprite, const String str,
-                              const int line, bool selected)
+static int print_line_to_tft(TFT_eSprite& tftsprite, const String str,
+                              int32_t pos, bool selected, bool big)
 {
+    tftsprite.setFreeFont(big? &FreeMonoBold18pt7b : &FreeMonoBold12pt7b);
     tftsprite.fillSprite(selected ? TFT_WHITE : TFT_BLACK);
     tftsprite.setTextColor(selected ? TFT_BLACK : TFT_WHITE);
     tftsprite.drawString(str, 8, 0);
-    tftsprite.pushSprite(0, line * 30);
+    tftsprite.pushSprite(0, pos);
+    return big? 30 : 20;
 }
 
 typedef struct
@@ -612,8 +644,6 @@ typedef struct
     String label;
     void (*func)(void* param);
 } label_function_t;
-
-void demo_mouse_circle(void* p) { mouse_circle(500); }
 
 void enter_command_demo(void* p)
 {
@@ -624,6 +654,10 @@ void enter_command_demo(void* p)
     int choice = 0;
     bool run = true;
     bool clear_screen = true;
+    int label_start = 0;
+    int label_display_len = labels_size > 8? 8 : labels_size;
+    int scrollable = labels_size - label_display_len; 
+
     while (encoder_read(0))
         ;
 
@@ -636,18 +670,21 @@ void enter_command_demo(void* p)
                 tft.fillScreen(TFT_BLACK);
                 clear_screen = false;
             }
+            int pos = 0;
             // title
-            print_line_to_tft(txt_spr, "Commands", 0, false);
+            pos += print_line_to_tft(txt_spr, "Commands", pos, false, true);
 
             // contents
-            int i = 0;
-            for (; i < labels_size; i++)
-                print_line_to_tft(txt_spr,
-                                  String(i + 1) + ". " + kb_commands[i].name, i + 1,
-                                  (i == choice));
+            int i = label_start;
+            for (int n = 0; n < label_display_len && i < labels_size; n++) {
+                pos += print_line_to_tft(txt_spr,
+                                  String(i + 1) + ". " + kb_commands[i].name, pos,
+                                  (i == choice), false);
+                i++;
+            }
 
             // back
-            print_line_to_tft(txt_spr, "Back", i + 1, (i == choice));
+            print_line_to_tft(txt_spr, "Back", pos, (i == choice), false);
         }
         update = false;
         evt = encoder_read(100);
@@ -671,7 +708,52 @@ void enter_command_demo(void* p)
             default:
                 break;
         }
+        int start_idx = label_start;
+        int end_idx = label_start + label_display_len - 1;
+
+        if (choice <= start_idx) {
+            label_start = choice > 0? choice - 1 : 0;
+        } else if (choice >= end_idx) {
+            label_start = choice + 1 - label_display_len;
+            label_start = label_start < scrollable? label_start : scrollable;
+        }
         update |= evt > 0;
+    }
+    tft.fillScreen(TFT_BLACK);
+}
+
+int demo_circle_radius = 500;
+void demo_mouse_circle(void* p) { 
+    
+    while (encoder_read(0) != ENC_RELEASE)
+        mouse_circle(demo_circle_radius); 
+}
+
+void encoder_set_radius(void* p) 
+{
+    tft.fillScreen(TFT_BLACK);
+    int pos = print_line_to_tft(txt_spr, "Radius", 0, false, true);
+    bool update = true;
+    bool run = true;
+    while (run)
+    {
+        if (update) {
+            update = false;
+            print_line_to_tft(txt_spr, String(demo_circle_radius), pos, true, true);
+        }
+        encoder_events evt = encoder_read(200);
+        update |= (evt > 0);
+        switch (evt) {
+            case ENC_LEFT: 
+                demo_circle_radius = demo_circle_radius > 0? demo_circle_radius - 10 : 0;
+                break;
+            case ENC_RIGHT:
+                demo_circle_radius = demo_circle_radius < 2000? demo_circle_radius + 10 : 0;
+                break;
+            case ENC_PRESS:
+                run = false;
+                break;
+        }
     }
     tft.fillScreen(TFT_BLACK);
 }
@@ -682,8 +764,15 @@ void enter_option_demo(String& str)
         {"Commands", enter_command_demo},
         {"World", NULL},
         {"Dewe", NULL},
-        {"From", NULL},
+        {"Radius", encoder_set_radius},
         {"Mouse", demo_mouse_circle},
+        {"Test1", NULL},
+        {"Test2", NULL},
+        {"Test3", NULL},
+        {"Test4", NULL},
+        {"Test5", NULL},
+        {"Test6", NULL},
+        {"Test7", NULL},
     };
     int labels_size = labels.size();
 
@@ -692,6 +781,9 @@ void enter_option_demo(String& str)
     int choice = 0;
     bool run = true;
     bool clear_screen = true;
+    int label_start = 0;
+    int label_display_len = labels_size > 8? 8 : labels_size;
+    int scrollable = labels_size - label_display_len; 
     while (encoder_read(0))
         ;
 
@@ -699,26 +791,30 @@ void enter_option_demo(String& str)
     {
         if (update)
         {
+            update = false;
             if (clear_screen)
             {
                 tft.fillScreen(TFT_BLACK);
                 clear_screen = false;
             }
+            int pos = 0;
             // title
-            print_line_to_tft(txt_spr, str, 0, false);
+            pos += print_line_to_tft(txt_spr, "Commands", pos, false, true);
 
             // contents
-            int i = 0;
-            for (; i < labels_size; i++)
-                print_line_to_tft(txt_spr,
-                                  String(i + 1) + ". " + labels[i].label, i + 1,
-                                  (i == choice));
+            int i = label_start;
+            for (int n = 0; n < label_display_len && i < labels_size; n++) {
+                pos += print_line_to_tft(txt_spr,
+                                  String(i + 1) + ". " + labels[i].label, pos,
+                                  (i == choice), false);
+                i++;
+            }
 
             // back
-            print_line_to_tft(txt_spr, "Back", i + 1, (i == choice));
+            print_line_to_tft(txt_spr, "Back", pos, (i == choice), false);
         }
-        update = false;
         evt = encoder_read(100);
+        update |= evt > 0;
         switch (evt)
         {
             case ENC_LEFT:
@@ -739,7 +835,15 @@ void enter_option_demo(String& str)
             default:
                 break;
         }
-        update |= evt > 0;
+        int start_idx = label_start;
+        int end_idx = label_start + label_display_len - 1;
+
+        if (choice <= start_idx) {
+            label_start = choice > 0? choice - 1 : 0;
+        } else if (choice >= end_idx) {
+            label_start = choice + 1 - label_display_len;
+            label_start = label_start < scrollable? label_start : scrollable;
+        }
     }
     tft.fillScreen(TFT_BLACK);
 }
