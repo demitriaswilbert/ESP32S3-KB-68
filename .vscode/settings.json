@@ -1,0 +1,26 @@
+{
+    "files.associations": {
+        "*.json": "json",
+        "tmp": "c",
+        "deque": "cpp",
+        "string": "cpp",
+        "vector": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "regex": "cpp",
+        "utility": "cpp",
+        "valarray": "cpp",
+        "*.tcc": "cpp",
+        "forward_list": "cpp",
+        "list": "cpp",
+        "esp32-hal-tinyusb.h": "c",
+        "unordered_map": "cpp",
+        "unordered_set": "cpp",
+        "system_error": "cpp",
+        "new": "cpp",
+        "functional": "cpp",
+        "random": "cpp"
+    }
+}

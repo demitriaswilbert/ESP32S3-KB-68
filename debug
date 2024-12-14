@@ -1,0 +1,12 @@
+C:/Espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line.exe -pfiaC -e .pio/build/um_pros3/firmware.elf 0x4200218f
+
+Core  1 register dump:
+PC      : 0x4037d928  PS      : 0x00060033  A0      : 0x8037bc4e  A1      : 0x3fca0bd0
+A2      : 0x0000004c  A3      : 0xb33fffff  A4      : 0x0000cdcd  A5      : 0x0000abab
+A6      : 0x00060023  A7      : 0x00060020  A8      : 0x0000abab  A9      : 0xffffffff
+A10     : 0x00000001  A11     : 0x3fc9fdc0  A12     : 0x00000020  A13     : 0x80000000
+A14     : 0x00ffffff  A15     : 0x3fc95a8c  SAR     : 0x00000000  EXCCAUSE: 0x0000001d
+EXCVADDR: 0x0000004c  LBEG    : 0x00000000  LEND    : 0x00000000  LCOUNT  : 0x00000000
+
+
+Backtrace: 0x4037d925:0x3fca0bd0 0x4037bc4b:0x3fca0c10 0x42001ee8:0x3fca0c50
