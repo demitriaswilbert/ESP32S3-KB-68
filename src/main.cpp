@@ -337,11 +337,11 @@ std::vector<kb_command_t> kb_commands = {
          {ACT_CMB, STR_LEFT_CTRL STR_LEFT_SHIFT "\n"},
          {ACT_DELAY, "500"},
          {ACT_SEP_SLOW, STR_LEFT_ARROW "\n"},
-         {ACT_DELAY, "300"},
+         {ACT_DELAY, "500"},
          {ACT_CMB, STR_LEFT_ALT STR_TAB},
          {ACT_DELAY, "300"},
          {ACT_CMB, STR_LEFT_ALT STR_LEFT_SHIFT STR_TAB},
-         {ACT_DELAY, "300"},
+         {ACT_DELAY, "100"},
          {ACT_SEP, "wininit"},
          {ACT_RLSALL, ""},
      }},
@@ -679,7 +679,7 @@ void enter_command_demo(void* p)
             // contents
             int i = label_start;
             for (int n = 0; n < label_display_len && i < labels_size; n++) {
-                pos += print_line_to_tft(                                  String(i + 1) + ". " + kb_commands[i].name, pos,
+                pos += print_line_to_tft( String(i + 1) + ". " + kb_commands[i].name, pos,
                                   (i == choice), false);
                 i++;
             }
@@ -715,7 +715,7 @@ void enter_command_demo(void* p)
         if (choice <= start_idx) {
             label_start = choice > 0? choice - 1 : 0;
         } else if (choice >= end_idx) {
-            label_start = choice + 1 - label_display_len;
+            label_start = choice + 2 - label_display_len;
             label_start = label_start < scrollable? label_start : scrollable;
         }
         update |= evt > 0;
@@ -752,7 +752,6 @@ void demo_mouse_circle(void* p)
             mouse_circle(i, radius);
             i = (i + 1) % 200;
             tc_delay(report_delay);
-            usb_cdc.write('a');
         }
         encoder_events evt = encoder_read((pressed && (choice == 0))? 0 : 200);
         update |= (evt > 0);
@@ -999,7 +998,7 @@ void enter_option_demo(String& str)
         if (choice <= start_idx) {
             label_start = choice > 0? choice - 1 : 0;
         } else if (choice >= end_idx) {
-            label_start = choice + 1 - label_display_len;
+            label_start = choice + 2 - label_display_len;
             label_start = label_start < scrollable? label_start : scrollable;
         }
     }
