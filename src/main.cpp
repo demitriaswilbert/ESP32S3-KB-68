@@ -331,7 +331,7 @@ std::vector<kb_command_t> kb_commands = {
     {"BSOD",
      {
          // bsod
-         {ACT_SEP_SLOW, STR_LEFT_GUI},
+         {ACT_CMB, STR_LEFT_GUI},
          {ACT_SEP, "powershell"},
          {ACT_DELAY, "100"},
          {ACT_CMB, STR_LEFT_CTRL STR_LEFT_SHIFT "\n"},
@@ -546,12 +546,12 @@ void do_command(std::vector<kb_action_t>& vec)
                 ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                    &report.getKeyReport(),
                                    sizeof(report.getKeyReport()));
-                vTaskDelay(20);
+                vTaskDelay((report_delay / 300) > 50? report_delay / 300 : 50);
                 report.releaseAll();
                 ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                    &report.getKeyReport(),
                                    sizeof(report.getKeyReport()));
-                vTaskDelay(80);
+                vTaskDelay((report_delay / 300) > 50? report_delay / 300 : 50);
                 break;
 
             case ACT_SEP:
@@ -582,12 +582,12 @@ void do_command(std::vector<kb_action_t>& vec)
                     ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                        &report.getKeyReport(),
                                        sizeof(report.getKeyReport()));
-                    vTaskDelay(20);
+                    vTaskDelay((report_delay / 300) > 50? report_delay / 300 : 50);
                     report.releaseAll();
                     ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                        &report.getKeyReport(),
                                        sizeof(report.getKeyReport()));
-                    vTaskDelay(30);
+                    vTaskDelay((report_delay / 300) > 50? report_delay / 300 : 50);
                 }
                 vTaskDelay(100);
                 break;
@@ -597,7 +597,7 @@ void do_command(std::vector<kb_action_t>& vec)
                 ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                    &report.getKeyReport(),
                                    sizeof(report.getKeyReport()));
-                vTaskDelay(20);
+                vTaskDelay((report_delay / 300) > 50? report_delay / 300 : 50);
                 break;
 
             case ACT_RLS:
@@ -605,7 +605,7 @@ void do_command(std::vector<kb_action_t>& vec)
                 ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                    &report.getKeyReport(),
                                    sizeof(report.getKeyReport()));
-                vTaskDelay(80);
+                vTaskDelay((report_delay / 300) > 50? report_delay / 300 : 50);
                 break;
 
             case ACT_RLSALL:
@@ -893,9 +893,9 @@ void demo_hid_delay(void* p)
             case ENC_LEFT: 
                 if (change_delay) {
                     uint32_t tmp_delay = report_delay;
-                    if (tmp_delay <= 5000)
+                    if (tmp_delay == 5000)
                         tmp_delay = 1000;
-                    if (tmp_delay > 5000)
+                    else if (tmp_delay > 5000)
                         tmp_delay -= 5000;
                     report_delay = tmp_delay;
                 }
@@ -905,9 +905,9 @@ void demo_hid_delay(void* p)
             case ENC_RIGHT:
                 if (change_delay) {
                     uint32_t tmp_delay = report_delay;
-                    if (tmp_delay == 1000)
-                        tmp_delay += 4000;
-                    if (tmp_delay < 500000)
+                    if (tmp_delay < 5000)
+                        tmp_delay = 5000;
+                    else if (tmp_delay < 500000)
                         tmp_delay += 5000;
                     report_delay = tmp_delay;
                 }
