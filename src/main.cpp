@@ -11,6 +11,10 @@
 #include <esp_now.h>
 #include <vector>
 
+extern "C" {
+    #include "chudnovsky.h"
+}
+
 #define millisll() (esp_timer_get_time() / 1000LL)
 
 #define THIS_MAC_ADDR "84:F7:03:EA:EC:F8"
@@ -26,6 +30,8 @@ static QueueHandle_t sent_queue = NULL;
 static SemaphoreHandle_t esp_now_send_packet_mtx;
 static esp_now_peer_info_t* target_peer_info;
 
+static uint32_t report_delay = 1000;
+
 TFT_eSPI tft = TFT_eSPI();
 TFT_eSprite txt_spr(&tft);
 
@@ -38,6 +44,31 @@ typedef struct
 } report_info_t;
 
 #define log_cdc(format, ...) usb_cdc.printf(format "\r\n", ##__VA_ARGS__)
+
+static int64_t tc_last_time = esp_timer_get_time();
+static int64_t tc_time_diff = 0;
+static int64_t tc_final_delay;
+
+void tc_init() {
+    if (esp_timer_get_time() - tc_last_time > 20000) {
+        tc_time_diff = 0;
+        tc_last_time = esp_timer_get_time();
+    }
+}
+
+void tc_delay(int64_t us) {
+    tc_time_diff += esp_timer_get_time() - tc_last_time;
+    tc_final_delay = report_delay;
+    if (tc_final_delay > tc_time_diff) {
+        tc_final_delay -= tc_time_diff;
+        tc_time_diff = 0;
+    } else {
+        tc_final_delay = 0;
+        tc_time_diff -= tc_final_delay;
+    }
+    vTaskDelay(tc_final_delay / 1000);
+    tc_last_time += us;
+}
 
 /**
  * @brief Get a Mac Address array from a string
@@ -254,6 +285,31 @@ typedef struct
 } kb_command_t;
 
 std::vector<kb_command_t> kb_commands = {
+    {"taskmgr",
+     {
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "taskmgr\n"},
+     }},
+    {"Ncpa.cpl",
+     {
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "Ncpa.cpl\n"},
+     }},
+    {"code",
+     {
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "code\n"},
+     }},
+    {"Appwiz.cpl",
+     {
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "Appwiz.cpl\n"},
+     }},
+    {"Python Serial",
+     {
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "python -m serial\n"},
+     }},
     {"Rick Roll",
      {
          // rick roll
@@ -272,51 +328,34 @@ std::vector<kb_command_t> kb_commands = {
          {ACT_SEP, "echo \"\"\n"},
          {ACT_RLSALL, ""},
      }},
-    {"Shut Down PC",
-     {
-         // shut down
-         {ACT_CMB, STR_LEFT_GUI "r"},
-         {ACT_SEP, "shutdown /s /t 0\n"},
-     }},
     {"BSOD",
      {
          // bsod
          {ACT_SEP_SLOW, STR_LEFT_GUI},
          {ACT_SEP, "powershell"},
+         {ACT_DELAY, "100"},
          {ACT_CMB, STR_LEFT_CTRL STR_LEFT_SHIFT "\n"},
          {ACT_DELAY, "500"},
          {ACT_SEP_SLOW, STR_LEFT_ARROW "\n"},
-         {ACT_DELAY, ""},
+         {ACT_DELAY, "300"},
          {ACT_CMB, STR_LEFT_ALT STR_TAB},
-         {ACT_DELAY, ""},
+         {ACT_DELAY, "300"},
          {ACT_CMB, STR_LEFT_ALT STR_LEFT_SHIFT STR_TAB},
-         {ACT_DELAY, ""},
-         {ACT_SEP, "wininit\n"},
+         {ACT_DELAY, "300"},
+         {ACT_SEP, "wininit"},
          {ACT_RLSALL, ""},
      }},
-    {"Test1",
+    {"Sign Out PC",
      {
-         {ACT_SEP, "Test1"},
+         // shut down
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "logoff\n"},
      }},
-    {"Test2",
+    {"Shut Down PC",
      {
-         {ACT_SEP, "Test2"},
-     }},
-    {"Test3",
-     {
-         {ACT_SEP, "Test3"},
-     }},
-    {"Test4",
-     {
-         {ACT_SEP, "Test4"},
-     }},
-    {"Test5",
-     {
-         {ACT_SEP, "Test5"},
-     }},
-    {"Test6",
-     {
-         {ACT_SEP, "Test6"},
+         // shut down
+         {ACT_CMB, STR_LEFT_GUI "r"},
+         {ACT_SEP, "shutdown /s /t 0\n"},
      }},
 };
 
@@ -346,52 +385,16 @@ void calculate_circle(hid_mouse_report_t* reports, float radius, size_t samples)
     }
 }
 
-void mouse_circle(int radius = 500.f)
+void mouse_circle(int i, int radius = 500.f)
 {
-    static float r = 500.f;
+    static float r = 0.f;
     if (r != radius)
     {
         r = radius;
         calculate_circle(ms_reports, radius, 200);
     }
-
-    int64_t ms_time = esp_timer_get_time();
-    for (int j = 0; j < 200; j++)
-    {
-        ESP_NOW_SendReport(HID_REPORT_ID_MOUSE, &ms_reports[j],
-                           sizeof(hid_mouse_report_t));
-        if (esp_timer_get_time() - ms_time < 1000) vTaskDelay(1);
-        ms_time += 1000;
-    }
-}
-
-void mouse_circle_task(void* param)
-{
-    float radius;
-    float prev_radius = 500.f;
-    calculate_circle(ms_reports, prev_radius, 200);
-    int64_t ms_time = esp_timer_get_time();
-    int i = 0;
-    while (true)
-    {
-        TickType_t wait_for = (GPIO.in & (1UL << 8)) ? portMAX_DELAY : 0;
-        if (xQueueReceive(mouse_circle_queue, &radius, wait_for) == pdTRUE &&
-            (prev_radius != radius))
-        {
-            calculate_circle(ms_reports, radius, 200);
-            prev_radius = radius;
-        }
-
-        if (esp_timer_get_time() - ms_time > 15000)
-            ms_time = esp_timer_get_time();
-
-        ESP_NOW_SendReport(HID_REPORT_ID_MOUSE, &ms_reports[i],
-                           sizeof(hid_mouse_report_t));
-        i = (i + 1) % 200;
-
-        if (esp_timer_get_time() - ms_time < 5000) vTaskDelay(5);
-        ms_time += 5000;
-    }
+    ESP_NOW_SendReport(HID_REPORT_ID_MOUSE, &ms_reports[i % 200],
+                        sizeof(hid_mouse_report_t));
 }
 
 #define ENCODER_CLK 13
@@ -510,11 +513,6 @@ void setup()
     tft.setRotation(0);
     tft.fillScreen(TFT_BLACK);
 
-    // initialize text sprite, set font and text color
-    txt_spr.createSprite(240, 30);
-    txt_spr.setTextColor(TFT_WHITE);
-    txt_spr.setFreeFont(&FreeMonoBold18pt7b);
-
     pinMode(14, OUTPUT);
     pinMode(15, OUTPUT);
     pinMode(6, OUTPUT);
@@ -526,14 +524,12 @@ void setup()
     encoder_init();
 
     pinMode(8, INPUT_PULLUP);
-
-    xTaskCreatePinnedToCore(mouse_circle_task, "mouse_circle_task", 4096, NULL,
-                            3, NULL, 1);
 }
 
 void do_command(std::vector<kb_action_t>& vec)
 {
     static Reports report;
+    int64_t report_time;
 
     for (int i = 0; i < vec.size(); i++)
     {
@@ -559,18 +555,22 @@ void do_command(std::vector<kb_action_t>& vec)
                 break;
 
             case ACT_SEP:
+                tc_init();
                 for (size_t j = 0; j < str.length(); j++)
                 {
                     report.press(str[j]);
                     ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                        &report.getKeyReport(),
                                        sizeof(report.getKeyReport()));
-                    vTaskDelay(1);
+
+                    tc_delay(report_delay);
+
                     report.releaseAll();
                     ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
                                        &report.getKeyReport(),
                                        sizeof(report.getKeyReport()));
-                    vTaskDelay(1);
+
+                    tc_delay(report_delay);
                 }
                 vTaskDelay(100);
                 break;
@@ -623,19 +623,21 @@ void do_command(std::vector<kb_action_t>& vec)
                 break;
 
             case ACT_MOUSE_GOCRAZY:
-                mouse_circle();
+                mouse_circle(0);
         }
     }
 }
 
-static int print_line_to_tft(TFT_eSprite& tftsprite, const String str,
+static int print_line_to_tft(const String str,
                               int32_t pos, bool selected, bool big)
 {
-    tftsprite.setFreeFont(big? &FreeMonoBold18pt7b : &FreeMonoBold12pt7b);
-    tftsprite.fillSprite(selected ? TFT_WHITE : TFT_BLACK);
-    tftsprite.setTextColor(selected ? TFT_BLACK : TFT_WHITE);
-    tftsprite.drawString(str, 8, 0);
-    tftsprite.pushSprite(0, pos);
+    txt_spr.createSprite(240, big? 30 : 20);
+    txt_spr.setFreeFont(big? &FreeMonoBold18pt7b : &FreeMonoBold12pt7b);
+    txt_spr.fillSprite(selected ? TFT_WHITE : TFT_BLACK);
+    txt_spr.setTextColor(selected ? TFT_BLACK : TFT_WHITE);
+    txt_spr.drawString(str, 8, 0);
+    txt_spr.pushSprite(0, pos);
+    txt_spr.deleteSprite();
     return big? 30 : 20;
 }
 
@@ -672,19 +674,18 @@ void enter_command_demo(void* p)
             }
             int pos = 0;
             // title
-            pos += print_line_to_tft(txt_spr, "Commands", pos, false, true);
+            pos += print_line_to_tft("Commands", pos, false, true);
 
             // contents
             int i = label_start;
             for (int n = 0; n < label_display_len && i < labels_size; n++) {
-                pos += print_line_to_tft(txt_spr,
-                                  String(i + 1) + ". " + kb_commands[i].name, pos,
+                pos += print_line_to_tft(                                  String(i + 1) + ". " + kb_commands[i].name, pos,
                                   (i == choice), false);
                 i++;
             }
 
             // back
-            print_line_to_tft(txt_spr, "Back", pos, (i == choice), false);
+            print_line_to_tft("Back", pos, (i == choice), false);
         }
         update = false;
         evt = encoder_read(100);
@@ -723,35 +724,201 @@ void enter_command_demo(void* p)
 }
 
 int demo_circle_radius = 500;
-void demo_mouse_circle(void* p) { 
-    
-    while (encoder_read(0) != ENC_RELEASE)
-        mouse_circle(demo_circle_radius); 
-}
-
-void encoder_set_radius(void* p) 
-{
+void demo_mouse_circle(void* p) 
+{ 
     tft.fillScreen(TFT_BLACK);
-    int pos = print_line_to_tft(txt_spr, "Radius", 0, false, true);
+    int pos = print_line_to_tft("Mouse Circle", 0, false, true);
     bool update = true;
     bool run = true;
+
+    int choice = 0;
+    bool pressed = false;
+    bool change_radius = false;
+
+    int radius = 500;
+    Reports report;
+
     while (run)
     {
         if (update) {
             update = false;
-            print_line_to_tft(txt_spr, String(demo_circle_radius), pos, true, true);
+            print_line_to_tft("Mouse Circle", 30, choice == 0, false);
+            print_line_to_tft((change_radius? "    " : "Radius: ") + String(radius), 50, choice == 1, false);
+            print_line_to_tft("Back", 70, choice == 2, false);
+        }
+        if (pressed && choice == 0) {
+            tc_init();
+            static int i = 0;
+            mouse_circle(i, radius);
+            i = (i + 1) % 200;
+            tc_delay(report_delay);
+            usb_cdc.write('a');
+        }
+        encoder_events evt = encoder_read((pressed && (choice == 0))? 0 : 200);
+        update |= (evt > 0);
+        switch (evt) {
+            case ENC_LEFT: 
+                if (pressed) break;
+                if (change_radius)
+                    radius = radius > 10? radius - 10 : 0;
+                else choice = (choice + 2) % 3;
+
+                break;
+            case ENC_RIGHT:
+                if (pressed) break;
+                if (change_radius)
+                    radius = radius < 2000? radius + 10 : radius;
+                else choice = (choice + 1) % 3;
+
+                break;
+            case ENC_PRESS:
+                pressed = true;
+                if (choice == 1) change_radius = !change_radius;
+                else if (choice == 2) run = false;
+                break;
+            case ENC_RELEASE:
+                pressed = false;
+                break;
+        }
+    }
+    tft.fillScreen(TFT_BLACK);
+}
+
+void demo_print_pi(void* p) 
+{
+    tft.fillScreen(TFT_BLACK);
+    int pos = print_line_to_tft("Print Pi", 0, false, true);
+
+    pos += print_line_to_tft("Computing", pos, false, true);
+    pos += print_line_to_tft("Pi", pos, false, true);
+    
+    // calculate pi
+    mpz_t pi;
+    mpzinit(pi);
+    chudnovsky(pi, 5000);
+
+    // convert to string
+    char* str = mpz_get_str(NULL, 10, pi);
+    size_t len = strlen(str);
+
+    // free mpz
+    mpzclear(pi);
+
+    print_line_to_tft("Pi " + String(len), 0, false, true);
+
+    int choice = 0;
+    int pi_index = 0;
+    bool type_enable = false;
+    Reports report;
+
+    bool update = true;
+    bool run = true;
+
+    while (run)
+    {
+        if (update) {
+            update = false;
+            print_line_to_tft(String(pi_index) + " / " + String(len), 30, choice == 0, false);
+            print_line_to_tft("Reset", 50, choice == 1, false);
+            print_line_to_tft("Back", 70, choice == 2, false);
+        }
+        if (type_enable) {
+            if (pi_index == len) 
+                pi_index = 0;
+            
+            tc_init();
+
+            report.press(str[pi_index++]);
+            ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
+                                &report.getKeyReport(),
+                                sizeof(report.getKeyReport()));
+
+            tc_delay(report_delay);
+
+            report.releaseAll();
+            ESP_NOW_SendReport(HID_REPORT_ID_KEYBOARD,
+                                &report.getKeyReport(),
+                                sizeof(report.getKeyReport()));
+            
+            tc_delay(report_delay);
+
+            update |= (pi_index % 50 == 49 || pi_index == len);
+            type_enable &= pi_index < len;
+        }
+        encoder_events evt = encoder_read(type_enable? 0 : 200);
+        update |= (evt > 0);
+        switch (evt) {
+            case ENC_LEFT: 
+                if (type_enable) break;
+                choice = (choice + 2) % 3;
+                break;
+            case ENC_RIGHT:
+                if (type_enable) break;
+                choice = (choice + 1) % 3;
+                break;
+            case ENC_PRESS:
+                if (choice == 0) type_enable = true;
+                else if (choice == 1) pi_index = 0;
+                else run = false;
+                break;
+            case ENC_RELEASE:
+                if (choice == 0) type_enable = false;
+                break;
+        }
+    }
+    free(str);
+    tft.fillScreen(TFT_BLACK);
+}
+
+void demo_hid_delay(void* p) 
+{ 
+    tft.fillScreen(TFT_BLACK);
+    int pos = print_line_to_tft("HID Delay", 0, false, true);
+    bool update = true;
+    bool run = true;
+
+    bool choice = false;
+    bool change_delay = false;
+
+    while (run)
+    {
+        if (update) {
+            update = false;
+            print_line_to_tft((change_delay? "    " : "Delay: ") + String(report_delay), 30, choice == 0, false);
+            print_line_to_tft("Back", 50, choice == 1, false);
         }
         encoder_events evt = encoder_read(200);
         update |= (evt > 0);
         switch (evt) {
             case ENC_LEFT: 
-                demo_circle_radius = demo_circle_radius > 0? demo_circle_radius - 10 : 0;
+                if (change_delay) {
+                    uint32_t tmp_delay = report_delay;
+                    if (tmp_delay <= 5000)
+                        tmp_delay = 1000;
+                    if (tmp_delay > 5000)
+                        tmp_delay -= 5000;
+                    report_delay = tmp_delay;
+                }
+                else choice = !choice;
+
                 break;
             case ENC_RIGHT:
-                demo_circle_radius = demo_circle_radius < 2000? demo_circle_radius + 10 : 0;
+                if (change_delay) {
+                    uint32_t tmp_delay = report_delay;
+                    if (tmp_delay == 1000)
+                        tmp_delay += 4000;
+                    if (tmp_delay < 500000)
+                        tmp_delay += 5000;
+                    report_delay = tmp_delay;
+                }
+                else choice = !choice;
+
                 break;
             case ENC_PRESS:
-                run = false;
+                if (choice) run = false;
+                else change_delay = !change_delay;
+                break;
+            case ENC_RELEASE:
                 break;
         }
     }
@@ -762,17 +929,9 @@ void enter_option_demo(String& str)
 {
     static std::vector<label_function_t> labels = {
         {"Commands", enter_command_demo},
-        {"World", NULL},
-        {"Dewe", NULL},
-        {"Radius", encoder_set_radius},
+        {"Pi", demo_print_pi},
         {"Mouse", demo_mouse_circle},
-        {"Test1", NULL},
-        {"Test2", NULL},
-        {"Test3", NULL},
-        {"Test4", NULL},
-        {"Test5", NULL},
-        {"Test6", NULL},
-        {"Test7", NULL},
+        {"HID delay", demo_hid_delay},
     };
     int labels_size = labels.size();
 
@@ -799,19 +958,18 @@ void enter_option_demo(String& str)
             }
             int pos = 0;
             // title
-            pos += print_line_to_tft(txt_spr, "Commands", pos, false, true);
+            pos += print_line_to_tft("Main Menu", pos, false, true);
 
             // contents
             int i = label_start;
             for (int n = 0; n < label_display_len && i < labels_size; n++) {
-                pos += print_line_to_tft(txt_spr,
-                                  String(i + 1) + ". " + labels[i].label, pos,
+                pos += print_line_to_tft(String(i + 1) + ". " + labels[i].label, pos,
                                   (i == choice), false);
                 i++;
             }
 
             // back
-            print_line_to_tft(txt_spr, "Back", pos, (i == choice), false);
+            print_line_to_tft("Back", pos, (i == choice), false);
         }
         evt = encoder_read(100);
         update |= evt > 0;
